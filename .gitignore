@@ -1,0 +1,12 @@
+*.dll
+*.db
+*.exe
+.air.conf
+coverage.txt
+
+tmp/
+/logs/
+/.idea/
+
+/__debug_bin
+/bin
