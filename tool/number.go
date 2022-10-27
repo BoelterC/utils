@@ -3,7 +3,7 @@ package tool
 import (
 	"fmt"
 
-	"gitee.com/boelterc/utils/math"
+	"github.com/BoelterC/utils/math"
 )
 
 func FibonacciQue(n int) []int {
