@@ -1,3 +1,3 @@
-module gitee.com/boelterc/utils
+module github.com/BoelterC/utils
 
 go 1.14
