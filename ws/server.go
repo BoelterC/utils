@@ -143,6 +143,18 @@ func (ws *WsServer) ToA(msg []byte) {
 	}
 }
 
+func (ws *WsServer) ToC(session int64, msg []byte) {
+	ws.clientsMu.Lock()
+	defer ws.clientsMu.Unlock()
+
+	for c := range ws.Clients {
+		if c.session == session {
+			c.msgs <- msg
+			break
+		}
+	}
+}
+
 func (ws *WsServer) addClient(c *client) {
 	ws.clientsMu.Lock()
 	ws.Clients[c] = struct{}{}
