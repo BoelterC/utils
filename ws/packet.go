@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/md5"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -162,16 +163,15 @@ type writeBuf struct {
 	Id        uint32
 	MsgId     int32
 	Md5Len    int32
-	Md5       [16]byte
 }
 
 func GetPacketBuff(session int64, id uint, msgId int, msg []byte) (bs []byte, err error) {
-	md := md5.Sum(msg)
+	hash := md5.Sum(msg)
+	md := hex.EncodeToString(hash[:])
 	buf := &writeBuf{
 		Session:   session,
-		Timestamp: time.Now().UnixNano(),
+		Timestamp: time.Now().UnixMilli(),
 		Md5Len:    int32(len(md)),
-		Md5:       md,
 		Id:        uint32(id),
 		MsgId:     int32(msgId),
 	}
@@ -179,6 +179,9 @@ func GetPacketBuff(session int64, id uint, msgId int, msg []byte) (bs []byte, er
 
 	b := bytes.Buffer{}
 	if err = binary.Write(&b, binary.LittleEndian, buf); err != nil {
+		return
+	}
+	if err = binary.Write(&b, binary.LittleEndian, []byte(md)); err != nil {
 		return
 	}
 	if err = binary.Write(&b, binary.LittleEndian, msg); err != nil {
