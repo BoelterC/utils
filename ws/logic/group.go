@@ -6,34 +6,26 @@ import (
 	"time"
 
 	"github.com/BoelterC/utils/ws/msg"
+	"github.com/BoelterC/utils/ws/util"
 
 	"golang.org/x/time/rate"
 )
 
-type Group struct {
-	Gid  uint32
-	Name string
+var uid32 *util.UID32 = &util.UID32{}
 
-	users map[int64]struct{}
-	RcvCh chan *msg.Packet
-}
-
-func NewGroup(gid uint32) *Group {
-	return &Group{
-		Gid:   gid,
-		users: map[int64]struct{}{},
-		RcvCh: make(chan *msg.Packet, 32),
-	}
-}
-
-func (g *Group) rmvUser(sid int64) {
-	delete(g.users, sid)
+type Group interface {
+	GetId() uint32
+	GetName() string
+	AddUser(uid int64) bool
+	RmvUser(uid int64) bool
+	GetUsers() []int64
+	GetRcvCh() chan *msg.Packet
 }
 
 type GroupManager struct {
 	publishLimiter *rate.Limiter
 
-	groups  map[uint32]*Group
+	groups  map[uint]Group
 	users   map[int64]*User
 	usersMu sync.Mutex
 	msgCh   chan *msg.Packet
@@ -48,7 +40,7 @@ func NewGroupMgr() *GroupManager {
 		groupMgr = &GroupManager{
 			publishLimiter: rate.NewLimiter(rate.Every(time.Microsecond*100), 8),
 
-			groups: map[uint32]*Group{},
+			groups: map[uint]Group{},
 			users:  make(map[int64]*User),
 			msgCh:  make(chan *msg.Packet, 32),
 			RcvCh:  make(chan *msg.Packet, 32),
@@ -59,12 +51,24 @@ func NewGroupMgr() *GroupManager {
 
 func (g *GroupManager) Start() {
 	for pak := range g.msgCh {
-		if gp := g.groups[pak.Id]; gp != nil {
-			gp.RcvCh <- pak
+		if gp := g.groups[uint(pak.Id)]; gp != nil {
+			gp.GetRcvCh() <- pak
 		} else {
 			g.RcvCh <- pak
 		}
 	}
+}
+
+func (g *GroupManager) CreateGroup(gp Group) uint {
+	gid := uint(uid32.Get32())
+	g.groups[gid] = gp
+	return gid
+}
+
+func (g *GroupManager) JoinGroup(gid uint, user *User) {
+}
+
+func (g *GroupManager) LeaveGroup(gid uint, user *User) {
 }
 
 func (g *GroupManager) UserEnter(u *User) {
@@ -79,7 +83,7 @@ func (g *GroupManager) UserLeave(u *User) {
 	defer g.usersMu.Unlock()
 
 	for _, gp := range g.groups {
-		gp.rmvUser(u.Session)
+		gp.RmvUser(u.Session)
 	}
 	delete(g.users, u.Session)
 }
@@ -99,19 +103,38 @@ func (g *GroupManager) ToA(mid int, data []byte) {
 	}
 }
 
-func (g *GroupManager) ToG(gid uint32, mid int, data []byte) {
+func (g *GroupManager) ToG(gid uint, mid int, data []byte) {
 	g.usersMu.Lock()
 	defer g.usersMu.Unlock()
 
+	g.publishLimiter.Wait(context.Background())
+
 	if gp := g.groups[gid]; gp != nil {
+		for _, sid := range gp.GetUsers() {
+			select {
+			case g.users[sid].MsgCh <- &Msg{Pak: true, Gid: gid, Mid: mid, Data: data}:
+			default:
+				go g.users[sid].closeSlow()
+			}
+		}
 	}
 }
 
-func (g *GroupManager) ToO(gid uint32, sid int64, mid int, data []byte) {
+func (g *GroupManager) ToO(gid uint, sid int64, mid int, data []byte) {
 	g.usersMu.Lock()
 	defer g.usersMu.Unlock()
 
 	if gp := g.groups[gid]; gp != nil {
+		for _, uid := range gp.GetUsers() {
+			if uid == sid {
+				continue
+			}
+			select {
+			case g.users[sid].MsgCh <- &Msg{Pak: true, Gid: gid, Mid: mid, Data: data}:
+			default:
+				go g.users[sid].closeSlow()
+			}
+		}
 	}
 }
 

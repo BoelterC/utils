@@ -19,7 +19,7 @@ const (
 	st_open
 )
 
-var uid *util.UniqueID = &util.UniqueID{}
+var u64 *util.UID64 = &util.UID64{}
 
 type Msg struct {
 	Pak  bool
@@ -44,7 +44,7 @@ type User struct {
 
 func NewUser(conn *websocket.Conn, nickname, addr string, closeFunc func()) *User {
 	return &User{
-		Session:  uid.Get(),
+		Session:  u64.Get64(),
 		Nickname: nickname,
 		Addr:     addr,
 		EnterAt:  time.Now(),
@@ -71,8 +71,9 @@ func (u *User) SendMsg(ctx context.Context) {
 	}
 }
 
-func (u *User) CloseCh() {
+func (u *User) Close(code websocket.StatusCode, reason string) {
 	close(u.MsgCh)
+	u.conn.Close(code, reason)
 }
 
 func recoverFromRecv(ctx context.Context) {
