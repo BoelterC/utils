@@ -29,8 +29,6 @@ type GroupManager struct {
 	users   map[int64]*User
 	usersMu sync.Mutex
 	msgCh   chan *msg.Packet
-
-	RcvCh chan *msg.Packet
 }
 
 var groupMgr *GroupManager
@@ -43,18 +41,19 @@ func NewGroupMgr() *GroupManager {
 			groups: map[uint]Group{},
 			users:  make(map[int64]*User),
 			msgCh:  make(chan *msg.Packet, 32),
-			RcvCh:  make(chan *msg.Packet, 32),
 		}
 	}
 	return groupMgr
 }
 
-func (g *GroupManager) Start() {
+func (g *GroupManager) Start(msgFunc func(*msg.Packet)) {
 	for pak := range g.msgCh {
 		if gp := g.groups[uint(pak.Id)]; gp != nil {
 			gp.GetRcvCh() <- pak
 		} else {
-			g.RcvCh <- pak
+			if msgFunc != nil {
+				msgFunc(pak)
+			}
 		}
 	}
 }
