@@ -14,18 +14,21 @@ import (
 var uid32 *util.UID32 = &util.UID32{}
 
 type Group interface {
-	GetId() uint32
+	GetId() uint
+	SetId(gid uint)
 	GetName() string
-	AddUser(uid int64) bool
-	RmvUser(uid int64) bool
+	JoinGroup(sid int64) bool
+	LeaveGroup(sid int64) bool
 	GetUsers() []int64
 	GetRcvCh() chan *msg.Packet
+	Dispose()
 }
 
 type GroupManager struct {
 	publishLimiter *rate.Limiter
 
 	groups  map[uint]Group
+	gpsMu   sync.Mutex
 	users   map[int64]*User
 	usersMu sync.Mutex
 	msgCh   chan *msg.Packet
@@ -58,16 +61,36 @@ func (g *GroupManager) Start(msgFunc func(*msg.Packet)) {
 	}
 }
 
-func (g *GroupManager) CreateGroup(gp Group) uint {
+func (g *GroupManager) AddGroup(gp Group) uint {
+	g.gpsMu.Lock()
+	defer g.gpsMu.Unlock()
+
 	gid := uint(uid32.Get32())
+	gp.SetId(gid)
 	g.groups[gid] = gp
 	return gid
 }
 
-func (g *GroupManager) JoinGroup(gid uint, user *User) {
+func (g *GroupManager) CloseGroup(gid uint) {
+	g.gpsMu.Lock()
+	defer g.gpsMu.Unlock()
+
+	if gp := g.groups[gid]; gp != nil {
+		gp.Dispose()
+	}
+	delete(g.groups, gid)
 }
 
-func (g *GroupManager) LeaveGroup(gid uint, user *User) {
+func (g *GroupManager) LeaveGroup(gid uint, sid int64) {
+	g.gpsMu.Lock()
+	defer g.gpsMu.Unlock()
+
+	if gp := g.groups[gid]; gp != nil {
+		gp.LeaveGroup(sid)
+		if len(gp.GetUsers()) == 0 {
+			g.CloseGroup(gid)
+		}
+	}
 }
 
 func (g *GroupManager) UserEnter(u *User) {
@@ -82,7 +105,7 @@ func (g *GroupManager) UserLeave(u *User) {
 	defer g.usersMu.Unlock()
 
 	for _, gp := range g.groups {
-		gp.RmvUser(u.Session)
+		g.LeaveGroup(gp.GetId(), u.Session)
 	}
 	delete(g.users, u.Session)
 }
@@ -122,6 +145,8 @@ func (g *GroupManager) ToG(gid uint, mid int, data []byte) {
 func (g *GroupManager) ToO(gid uint, sid int64, mid int, data []byte) {
 	g.usersMu.Lock()
 	defer g.usersMu.Unlock()
+
+	g.publishLimiter.Wait(context.Background())
 
 	if gp := g.groups[gid]; gp != nil {
 		for _, uid := range gp.GetUsers() {
