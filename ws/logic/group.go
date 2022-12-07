@@ -14,10 +14,10 @@ import (
 var uid32 *util.UID32 = &util.UID32{}
 
 type Group interface {
+	GetType() int
 	GetId() uint
 	SetId(gid uint)
-	GetName() string
-	JoinGroup(sid int64) bool
+	JoinGroup(sid int64, userinfo interface{}) bool
 	LeaveGroup(sid int64) bool
 	GetUsers() []int64
 	GetRcvCh() chan *msg.Packet
@@ -69,6 +69,10 @@ func (g *GroupManager) AddGroup(gp Group) uint {
 	gp.SetId(gid)
 	g.groups[gid] = gp
 	return gid
+}
+
+func (g *GroupManager) FindGroup(gid uint) Group {
+	return g.groups[gid]
 }
 
 func (g *GroupManager) CloseGroup(gid uint) {
