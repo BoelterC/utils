@@ -27,16 +27,18 @@ type Group interface {
 type GroupManager struct {
 	publishLimiter *rate.Limiter
 
-	groups  map[uint]Group
-	gpsMu   sync.Mutex
-	users   map[int64]*User
-	usersMu sync.Mutex
-	msgCh   chan *msg.Packet
+	groups map[uint]Group
+	users  map[int64]*User
+	syncMu sync.Mutex
+	msgCh  chan *msg.Packet
 }
 
 var groupMgr *GroupManager
 
 func NewGroupMgr() *GroupManager {
+	u64.Get64()
+	uid32.Get32()
+
 	if groupMgr == nil {
 		groupMgr = &GroupManager{
 			publishLimiter: rate.NewLimiter(rate.Every(time.Microsecond*100), 8),
@@ -62,8 +64,8 @@ func (g *GroupManager) Start(msgFunc func(*msg.Packet)) {
 }
 
 func (g *GroupManager) AddGroup(gp Group) uint {
-	g.gpsMu.Lock()
-	defer g.gpsMu.Unlock()
+	g.syncMu.Lock()
+	defer g.syncMu.Unlock()
 
 	gid := uint(uid32.Get32())
 	gp.SetId(gid)
@@ -86,37 +88,34 @@ func (g *GroupManager) FindGroup(gid uint) Group {
 }
 
 func (g *GroupManager) CloseGroup(gid uint) {
-	g.gpsMu.Lock()
-	defer g.gpsMu.Unlock()
-
 	if gp := g.groups[gid]; gp != nil {
 		gp.Dispose()
 	}
 	delete(g.groups, gid)
 }
 
-func (g *GroupManager) LeaveGroup(gid uint, sid int64) {
-	g.gpsMu.Lock()
-	defer g.gpsMu.Unlock()
-
+func (g *GroupManager) LeaveGroup(gid uint, sid int64) bool {
 	if gp := g.groups[gid]; gp != nil {
-		gp.LeaveGroup(sid)
-		if len(gp.GetUsers()) == 0 {
-			g.CloseGroup(gid)
+		if gp.LeaveGroup(sid) {
+			if len(gp.GetUsers()) == 0 {
+				g.CloseGroup(gid)
+			}
+			return true
 		}
 	}
+	return false
 }
 
 func (g *GroupManager) UserEnter(u *User) {
-	g.usersMu.Lock()
-	defer g.usersMu.Unlock()
+	g.syncMu.Lock()
+	defer g.syncMu.Unlock()
 
 	g.users[u.Session] = u
 }
 
 func (g *GroupManager) UserLeave(u *User) {
-	g.usersMu.Lock()
-	defer g.usersMu.Unlock()
+	g.syncMu.Lock()
+	defer g.syncMu.Unlock()
 
 	for _, gp := range g.groups {
 		g.LeaveGroup(gp.GetId(), u.Session)
@@ -125,9 +124,6 @@ func (g *GroupManager) UserLeave(u *User) {
 }
 
 func (g *GroupManager) ToA(mid int, data []byte) {
-	g.usersMu.Lock()
-	defer g.usersMu.Unlock()
-
 	g.publishLimiter.Wait(context.Background())
 
 	for _, u := range g.users {
@@ -140,9 +136,6 @@ func (g *GroupManager) ToA(mid int, data []byte) {
 }
 
 func (g *GroupManager) ToG(gid uint, mid int, data []byte) {
-	g.usersMu.Lock()
-	defer g.usersMu.Unlock()
-
 	g.publishLimiter.Wait(context.Background())
 
 	if gp := g.groups[gid]; gp != nil {
@@ -157,9 +150,6 @@ func (g *GroupManager) ToG(gid uint, mid int, data []byte) {
 }
 
 func (g *GroupManager) ToO(gid uint, sid int64, mid int, data []byte) {
-	g.usersMu.Lock()
-	defer g.usersMu.Unlock()
-
 	g.publishLimiter.Wait(context.Background())
 
 	if gp := g.groups[gid]; gp != nil {
@@ -177,9 +167,6 @@ func (g *GroupManager) ToO(gid uint, sid int64, mid int, data []byte) {
 }
 
 func (g *GroupManager) ToC(sid int64, mid int, data []byte) {
-	g.usersMu.Lock()
-	defer g.usersMu.Unlock()
-
 	if u := g.users[sid]; u != nil {
 		u.MsgCh <- &Msg{Pak: true, Mid: mid, Data: data}
 	}
