@@ -71,6 +71,16 @@ func (g *GroupManager) AddGroup(gp Group) uint {
 	return gid
 }
 
+func (g *GroupManager) FindGroupList(typ int) []Group {
+	list := []Group{}
+	for _, gp := range g.groups {
+		if gp.GetType() == typ {
+			list = append(list, gp)
+		}
+	}
+	return list
+}
+
 func (g *GroupManager) FindGroup(gid uint) Group {
 	return g.groups[gid]
 }
