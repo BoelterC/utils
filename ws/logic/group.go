@@ -146,6 +146,14 @@ func (g *GroupManager) ToG(gid uint, mid int, data []byte) {
 				go g.users[sid].closeSlow()
 			}
 		}
+	} else if gid == 0 {
+		for sid := range g.users {
+			select {
+			case g.users[sid].MsgCh <- &Msg{Pak: true, Gid: gid, Mid: mid, Data: data}:
+			default:
+				go g.users[sid].closeSlow()
+			}
+		}
 	}
 }
 
@@ -158,16 +166,27 @@ func (g *GroupManager) ToO(gid uint, sid int64, mid int, data []byte) {
 				continue
 			}
 			select {
-			case g.users[sid].MsgCh <- &Msg{Pak: true, Gid: gid, Mid: mid, Data: data}:
+			case g.users[uid].MsgCh <- &Msg{Pak: true, Gid: gid, Mid: mid, Data: data}:
 			default:
 				go g.users[sid].closeSlow()
+			}
+		}
+	} else if gid == 0 {
+		for uSId := range g.users {
+			if uSId == sid {
+				continue
+			}
+			select {
+			case g.users[uSId].MsgCh <- &Msg{Pak: true, Gid: gid, Mid: mid, Data: data}:
+			default:
+				go g.users[uSId].closeSlow()
 			}
 		}
 	}
 }
 
-func (g *GroupManager) ToC(sid int64, mid int, data []byte) {
+func (g *GroupManager) ToC(sid int64, mid int, data []byte, gid uint) {
 	if u := g.users[sid]; u != nil {
-		u.MsgCh <- &Msg{Pak: true, Mid: mid, Data: data}
+		u.MsgCh <- &Msg{Pak: true, Gid: gid, Mid: mid, Data: data}
 	}
 }
