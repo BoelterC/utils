@@ -16,7 +16,7 @@ type Server struct {
 	// Defaults to log.Printf.
 	logf func(f string, v ...interface{})
 	// serveMux routes the various endpoints to the appropriate handler.
-	serveMux http.ServeMux
+	ServeMux http.ServeMux
 }
 
 func NewWebsocket(logger func(f string, v ...interface{})) *Server {
@@ -25,7 +25,7 @@ func NewWebsocket(logger func(f string, v ...interface{})) *Server {
 		logf:     logger,
 	}
 	// ws.serveMux.Handle("/", http.FileServer(http.Dir(".")))
-	ws.serveMux.HandleFunc("/ws", ws.userLinkHandler)
+	ws.ServeMux.HandleFunc("/ws", ws.userLinkHandler)
 	return ws
 }
 
@@ -65,5 +65,5 @@ func (ws *Server) userLinkHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 func (ws *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ws.serveMux.ServeHTTP(w, r)
+	ws.ServeMux.ServeHTTP(w, r)
 }
